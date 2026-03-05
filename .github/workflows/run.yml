@@ -18,7 +18,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      # ✅ تخزين system packages (يمنع إعادة التحميل)
+      # ✅ تخزين system packages مؤقتاً
       - name: Cache system packages
         uses: actions/cache@v3
         id: cache-system
@@ -28,47 +28,59 @@ jobs:
             /usr/bin/chromium-browser
             /usr/bin/chromedriver
             /usr/bin/ffmpeg
-            /usr/bin/xvfb
-          key: ${{ runner.os }}-system-v2-${{ hashFiles('.github/workflows/system-deps.txt') }}
+            /usr/bin/Xvfb
+          key: ${{ runner.os }}-system-${{ hashFiles('.github/workflows/system-deps.txt') }}
           restore-keys: |
-            ${{ runner.os }}-system-v2-
+            ${{ runner.os }}-system-
 
-      - name: Create system dependencies list
+      - name: Install system dependencies
         run: |
-          # إنشاء ملف بصمة للحزم (مرة واحدة)
-          mkdir -p .github/workflows
-          echo "ffmpeg chromium-browser chromium-chromedriver xvfb x11-utils" > .github/workflows/system-deps.txt
-          echo "libgl1-mesa-glx libglib2.0-0 libnss3 libgconf-2-4 libfontconfig1" >> .github/workflows/system-deps.txt
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            chromium-browser \
+            chromium-chromedriver \
+            xvfb \
+            x11-utils
 
-      - name: Install system dependencies (if not cached)
+      # ✅ **هنا الحل: تثبيت مكتبات Python الخاصة بالواتساب**
+      - name: Install WhatsApp Python libraries
         run: |
-          # التحقق من وجود الحزم
-          if ! command -v chromium-browser &> /dev/null; then
-            echo "📦 تثبيت system dependencies..."
-            sudo apt-get update
-            sudo apt-get install -y \
-              ffmpeg \
-              chromium-browser \
-              chromium-chromedriver \
-              xvfb \
-              x11-utils \
-              libgl1-mesa-glx \
-              libglib2.0-0 \
-              libnss3 \
-              libgconf-2-4 \
-              libfontconfig1
-          else
-            echo "✅ system dependencies موجودة مسبقاً (من الكاش)"
-          fi
+          pip install --upgrade pip
+          
+          # الخيار 1: neonize (الأحدث والأقوى) [citation:1][citation:6]
+          pip install neonize
+          
+          # الخيار 2: wawebpy (مكتبة Python للواتساب ويب) [citation:3]
+          pip install wawebpy
+          
+          # الخيار 3: selenium (للتحكم المباشر بالمتصفح)
+          pip install selenium webdriver-manager
+          
+          # الخيار 4: wa-automation [citation:9]
+          pip install wa-automation
 
-      - name: Verify system dependencies
+      # ✅ إنشاء requirements.txt بالطريقة الصحيحة
+      - name: Create requirements.txt with WhatsApp libraries
         run: |
-          echo "✅ التحقق من الحزم المثبتة:"
-          which chromium-browser || echo "❌ chromium-browser غير موجود"
-          which chromedriver || echo "❌ chromedriver غير موجود"
-          which ffmpeg || echo "❌ ffmpeg غير موجود"
-          which Xvfb || echo "❌ xvfb غير موجود"
+          cat > requirements.txt << 'EOF'
+          # مكتبات واتساب
+          neonize>=0.3.0
+          wawebpy>=0.0.1
+          selenium>=4.15.0
+          webdriver-manager>=4.0.1
+          
+          # مكتبات إضافية
+          pillow>=10.0.0
+          requests>=2.31.0
+          beautifulsoup4>=4.12.0
+          lxml>=4.9.0
+          EOF
+          
+          echo "✅ requirements.txt تم إنشاؤه:"
+          cat requirements.txt
 
+      # ✅ تخزين pip packages
       - name: Cache pip packages
         uses: actions/cache@v3
         with:
@@ -77,15 +89,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
+      # ✅ تثبيت جميع المكتبات (بما فيها مكتبات واتساب)
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          # تحقق من المكتبات المثبتة أولاً
-          if [ -f "requirements.txt" ]; then
-            pip install --no-cache-dir -r requirements.txt
-          else
-            echo "⚠️ لا يوجد requirements.txt"
-          fi
+          pip install -r requirements.txt
+          
+          echo "✅ المكتبات المثبتة:"
+          pip list | grep -E "neonize|wawebpy|selenium|webdriver|pillow|requests"
 
       - name: Run Bot
         env:
@@ -93,8 +104,10 @@ jobs:
           CHROME_DRIVER: /usr/bin/chromedriver
           DISPLAY: :99
         run: |
-          # تشغيل Xvfb في الخلفية
-          Xvfb :99 -screen 0 1024x768x24 &
+          # تشغيل Xvfb
+          Xvfb :99 -screen 0 1024x768x24 -ac &
+          sleep 3
+          
           # تشغيل البوت
           python3 main.py || echo "Bot session ended"
 
@@ -103,11 +116,24 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          # تحقق من وجود الملفات قبل إضافتها
-          if [ -f database/anime_bot.db ] || [ -f db.sqlite3 ]; then
-            git add database/anime_bot.db db.sqlite3 2>/dev/null || true
-            git commit -m "Update session data [skip ci]" || echo "No changes to commit"
-            git push origin main || echo "Failed to push session updates"
-          else
-            echo "⚠️ لا توجد ملفات جلسة للحفظ"
-          fi
+          
+          # حفظ الجلسة
+          for file in database/anime_bot.db db.sqlite3 session/*.pkl auth_info.json neonize.db; do
+            if [ -f "$file" ]; then
+              git add "$file" 2>/dev/null || true
+            fi
+          done
+          
+          git commit -m "🤖 تحديث الجلسة [skip ci]" || echo "لا تغييرات"
+          git push origin main || echo "فشل الرفع"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: bot-logs
+          path: |
+            *.log
+            logs/
+            screenshots/
+          if-no-files-found: ignore
