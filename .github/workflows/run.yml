@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'  # ⬅️ تم الترقية إلى 3.12
           cache: 'pip'
 
       # ✅ تخزين system packages مؤقتاً
@@ -29,79 +29,34 @@ jobs:
             /usr/bin/chromedriver
             /usr/bin/ffmpeg
             /usr/bin/Xvfb
-            /usr/lib/x86_64-linux-gnu/libxcb*
-            /usr/share/fonts
-            ~/.cache/chromium
           key: ${{ runner.os }}-system-${{ hashFiles('.github/workflows/system-deps.txt') }}
           restore-keys: |
             ${{ runner.os }}-system-
 
-      # إنشاء ملف بصمة للحزم
-      - name: Create system dependencies list
-        run: |
-          mkdir -p .github/workflows
-          cat > .github/workflows/system-deps.txt << 'EOF'
-          ffmpeg
-          chromium-browser
-          chromium-chromedriver
-          xvfb
-          x11-utils
-          libgl1-mesa-glx
-          libglib2.0-0
-          libnss3
-          libgconf-2-4
-          libfontconfig1
-          libxcb-shm0
-          libxcb-xfixes0
-          libxcb-shape0
-          libxkbcommon-x11-0
-          libxrandr2
-          libgbm1
-          libasound2
-          EOF
-
-      # تثبيت حزم النظام
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          if ! command -v chromium-browser &> /dev/null; then
-            echo "📦 تثبيت system dependencies لأول مرة..."
-            sudo apt-get install -y \
-              ffmpeg \
-              chromium-browser \
-              chromium-chromedriver \
-              xvfb \
-              x11-utils \
-              libgl1-mesa-glx \
-              libglib2.0-0 \
-              libnss3 \
-              libgconf-2-4 \
-              libfontconfig1 \
-              libxcb-shm0 \
-              libxcb-xfixes0 \
-              libxcb-shape0 \
-              libxkbcommon-x11-0 \
-              libxrandr2 \
-              libgbm1 \
-              libasound2
-          else
-            echo "✅ system dependencies موجودة مسبقاً"
-          fi
+          sudo apt-get install -y \
+            ffmpeg \
+            chromium-browser \
+            chromium-chromedriver \
+            xvfb \
+            x11-utils
 
-      # ✅ تثبيت مكتبات WhatsApp Python
+      # ✅ **تثبيت pywa (الأفضل والأكثر استقراراً)**
       - name: Install WhatsApp Python libraries
         run: |
           pip install --upgrade pip
-          # أفضل مكتبات Python للواتساب حالياً
-          pip install neonize wawebpy selenium webdriver-manager
+          # استخدام pywa بدلاً من wawebpy
+          pip install pywa
+          pip install selenium webdriver-manager
 
-      # ✅ إنشاء requirements.txt كامل
-      - name: Create complete requirements.txt
+      # ✅ إنشاء requirements.txt محدث
+      - name: Create requirements.txt
         run: |
           cat > requirements.txt << 'EOF'
-          # مكتبات واتساب
-          neonize>=0.3.0
-          wawebpy>=0.0.1
+          # مكتبات واتساب (محدثة)
+          pywa>=1.0.0          # بديل wawebpy - مستقر وقوي
           selenium>=4.15.0
           webdriver-manager>=4.0.1
           
@@ -110,14 +65,10 @@ jobs:
           requests>=2.31.0
           beautifulsoup4>=4.12.0
           lxml>=4.9.0
-          
-          # أدوات مساعدة
           python-dotenv>=1.0.0
-          colorama>=0.4.6
-          tqdm>=4.66.0
           EOF
           
-          echo "✅ requirements.txt تم إنشاؤه:"
+          echo "✅ requirements.txt:"
           cat requirements.txt
 
       # ✅ تخزين pip packages مؤقتاً
@@ -129,14 +80,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      # ✅ تثبيت جميع المتطلبات
+      # ✅ تثبيت المتطلبات
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           
           echo "✅ المكتبات المثبتة:"
-          pip list | grep -E "neonize|wawebpy|selenium|webdriver|pillow|requests|beautifulsoup"
+          pip list | grep -E "pywa|selenium|webdriver|pillow|requests"
 
       # ✅ تشغيل البوت
       - name: Run Bot
@@ -145,48 +96,29 @@ jobs:
           CHROME_DRIVER: /usr/bin/chromedriver
           DISPLAY: :99
         run: |
-          # تشغيل Xvfb
           Xvfb :99 -screen 0 1024x768x24 -ac &
           sleep 3
           
-          # التأكد من تشغيل Xvfb
-          if ps aux | grep -q "[X]vfb"; then
-            echo "✅ Xvfb يعمل بنجاح"
-          else
-            echo "❌ Xvfb فشل في التشغيل"
-            exit 1
-          fi
-          
-          # تشغيل البوت مع محاولات إعادة التشغيل
           for i in {1..3}; do
-            echo "🔄 محاولة تشغيل البوت رقم $i"
+            echo "🔄 محاولة $i"
             python3 main.py && break || sleep 5
           done
 
-      # ✅ حفظ الجلسة والتحديثات
+      # ✅ حفظ الجلسة
       - name: Save session changes
         if: always()
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           
-          # البحث عن ملفات الجلسة
-          FILES_ADDED=0
-          for file in database/anime_bot.db db.sqlite3 session/*.pkl auth_info.json neonize.db *.session; do
-            if [ -f "$file" ]; then
-              git add "$file" 2>/dev/null && FILES_ADDED=$((FILES_ADDED+1))
-            fi
+          for file in database/*.db *.sqlite3 session/*.pkl auth_info.json; do
+            [ -f "$file" ] && git add "$file" 2>/dev/null
           done
           
-          if [ $FILES_ADDED -gt 0 ]; then
-            git commit -m "🤖 تحديث ملفات الجلسة [skip ci]" || echo "ℹ️ لا تغييرات جديدة"
-            git push origin main || echo "⚠️ فشل رفع التحديثات"
-            echo "✅ تم تحديث $FILES_ADDED ملف(ات)"
-          else
-            echo "ℹ️ لا توجد ملفات جلسة للحفظ"
-          fi
+          git commit -m "🤖 تحديث الجلسة [skip ci]" || echo "لا تغييرات"
+          git push origin main || echo "فشل الرفع"
 
-      # ✅ **تم التحديث: استخدام upload-artifact@v4 بدلاً من v3**
+      # ✅ رفع السجلات (باستخدام v4)
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -196,21 +128,5 @@ jobs:
             *.log
             logs/
             screenshots/
-            /tmp/.X99-lock
-            xvfb.log
           if-no-files-found: ignore
           retention-days: 7
-          compression-level: 6
-
-      # ✅ إضافة خطوة للتأكيد على نجاح التحديث
-      - name: Workflow completion status
-        if: always()
-        run: |
-          echo "========================"
-          echo "🚀 حالة سير العمل: ${{ job.status }}"
-          echo "========================"
-          echo "📦 تم استخدام:"
-          echo "  - actions/checkout@v3"
-          echo "  - actions/setup-python@v4"
-          echo "  - actions/cache@v3"
-          echo "  - actions/upload-artifact@v4 ✅"
