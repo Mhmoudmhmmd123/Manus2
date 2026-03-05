@@ -16,12 +16,58 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pip'  # ✅ تفعيل التخزين المؤقت للمكتبات
+          cache: 'pip'
 
-      - name: Install system dependencies
+      # ✅ تخزين system packages (يمنع إعادة التحميل)
+      - name: Cache system packages
+        uses: actions/cache@v3
+        id: cache-system
+        with:
+          path: |
+            /var/cache/apt/archives
+            /usr/bin/chromium-browser
+            /usr/bin/chromedriver
+            /usr/bin/ffmpeg
+            /usr/bin/xvfb
+          key: ${{ runner.os }}-system-v2-${{ hashFiles('.github/workflows/system-deps.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-system-v2-
+
+      - name: Create system dependencies list
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg chromium-browser chromium-chromedriver xvfb
+          # إنشاء ملف بصمة للحزم (مرة واحدة)
+          mkdir -p .github/workflows
+          echo "ffmpeg chromium-browser chromium-chromedriver xvfb x11-utils" > .github/workflows/system-deps.txt
+          echo "libgl1-mesa-glx libglib2.0-0 libnss3 libgconf-2-4 libfontconfig1" >> .github/workflows/system-deps.txt
+
+      - name: Install system dependencies (if not cached)
+        run: |
+          # التحقق من وجود الحزم
+          if ! command -v chromium-browser &> /dev/null; then
+            echo "📦 تثبيت system dependencies..."
+            sudo apt-get update
+            sudo apt-get install -y \
+              ffmpeg \
+              chromium-browser \
+              chromium-chromedriver \
+              xvfb \
+              x11-utils \
+              libgl1-mesa-glx \
+              libglib2.0-0 \
+              libnss3 \
+              libgconf-2-4 \
+              libfontconfig1
+          else
+            echo "✅ system dependencies موجودة مسبقاً (من الكاش)"
+          fi
+
+      - name: Verify system dependencies
+        run: |
+          echo "✅ التحقق من الحزم المثبتة:"
+          which chromium-browser || echo "❌ chromium-browser غير موجود"
+          which chromedriver || echo "❌ chromedriver غير موجود"
+          which ffmpeg || echo "❌ ffmpeg غير موجود"
+          which Xvfb || echo "❌ xvfb غير موجود"
 
       - name: Cache pip packages
         uses: actions/cache@v3
@@ -34,15 +80,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          # تحقق من وجود المكتبات قبل التثبيت
-          pip list
-          # استخدم --no-cache-dir لتجنب إعادة التحميل
-          pip install --no-cache-dir -r requirements.txt
-
-      - name: Verify installation
-        run: |
-          echo "✅ المكتبات المثبتة:"
-          pip list | grep -E "selenium|webdriver|pillow|requests"
+          # تحقق من المكتبات المثبتة أولاً
+          if [ -f "requirements.txt" ]; then
+            pip install --no-cache-dir -r requirements.txt
+          else
+            echo "⚠️ لا يوجد requirements.txt"
+          fi
 
       - name: Run Bot
         env:
