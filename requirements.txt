@@ -1,0 +1,15 @@
+selenium==4.15.2
+webdriver-manager==4.0.1
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+aiohttp==3.9.1
+aiofiles==23.2.1
+ffmpeg-python==0.2.0
+yt-dlp==2023.11.16
+cloudscraper==1.2.71
+httpx==0.25.2
+Pillow==10.1.0
+fake-useragent==1.4.0
+pysocks==1.7.1
+chromedriver-autoinstaller==0.6.3
