@@ -1,35 +1,4 @@
-name: CI
-
-on: [push]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v2
-    
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.x'
-    
-    - name: Cache pip packages
-      uses: actions/cache@v2
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Run bot
-      run: |
-        xvfb-run -a python run.pyname: Anime WhatsApp Bot
+name: Anime WhatsApp Bot
 
 on:
   push:
@@ -47,27 +16,55 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'  # ✅ تفعيل التخزين المؤقت للمكتبات
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg chromium-browser chromium-chromedriver
-          pip install -r requirements.txt
+          sudo apt-get install -y ffmpeg chromium-browser chromium-chromedriver xvfb
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          # تحقق من وجود المكتبات قبل التثبيت
+          pip list
+          # استخدم --no-cache-dir لتجنب إعادة التحميل
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Verify installation
+        run: |
+          echo "✅ المكتبات المثبتة:"
+          pip list | grep -E "selenium|webdriver|pillow|requests"
 
       - name: Run Bot
         env:
           CHROME_BIN: /usr/bin/chromium-browser
           CHROME_DRIVER: /usr/bin/chromedriver
+          DISPLAY: :99
         run: |
-          # تشغيل البوت في الخلفية لمدة ساعة (كمثال) أو حتى ينتهي
-          timeout 1h python3 main.py || echo "Bot session ended or timed out"
+          # تشغيل Xvfb في الخلفية
+          Xvfb :99 -screen 0 1024x768x24 &
+          # تشغيل البوت
+          python3 main.py || echo "Bot session ended"
 
       - name: Save session changes
         if: always()
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git add database/anime_bot.db db.sqlite3
-          git commit -m "Update session data [skip ci]" || echo "No changes to commit"
-          git push origin main || echo "Failed to push session updates"
-          
+          # تحقق من وجود الملفات قبل إضافتها
+          if [ -f database/anime_bot.db ] || [ -f db.sqlite3 ]; then
+            git add database/anime_bot.db db.sqlite3 2>/dev/null || true
+            git commit -m "Update session data [skip ci]" || echo "No changes to commit"
+            git push origin main || echo "Failed to push session updates"
+          else
+            echo "⚠️ لا توجد ملفات جلسة للحفظ"
+          fi
